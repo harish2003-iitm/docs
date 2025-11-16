@@ -1,0 +1,104 @@
+---
+title: 'Transcribe Audio with Waves STT'
+description: 'Real-time speech transcription via WebSocket'
+---
+
+Waves STT provides real-time speech-to-text transcription with sub-second latency. Stream audio over WebSocket and receive instant transcriptions with built-in punctuation, PII redaction, and support for 30+ languages.
+
+## Endpoint
+
+```
+wss://waves-api.smallest.ai/api/v1/asr
+```
+
+**Method:** WebSocket
+**Pricing:** $0.025/minute (billed per second)
+
+## Authentication
+
+Include your API key as a Bearer token in the `Authorization` header:
+
+```
+Authorization: Bearer YOUR_API_KEY
+```
+
+Get your API key from your [Waves dashboard](https://waves.smallest.ai/) under **API Key** settings.
+
+## Quick Start
+
+### Python
+
+```python
+import asyncio
+import websockets
+
+async def transcribe_audio():
+    uri = "wss://waves-api.smallest.ai/api/v1/asr"
+    headers = {
+        "Authorization": "Bearer YOUR_API_KEY"
+    }
+
+    async with websockets.connect(uri, extra_headers=headers) as ws:
+        # Send audio as binary chunks (16kHz, mono, linear16)
+        with open("audio.raw", "rb") as audio:
+            while chunk := audio.read(8000):  # 0.5s chunks
+                await ws.send(chunk)
+
+        # Receive transcription results
+        async for message in ws:
+            result = json.loads(message)
+            if result.get("is_final"):
+                print(result["text"])
+
+asyncio.run(transcribe_audio())
+```
+
+### JavaScript
+
+```javascript
+const ws = new WebSocket('wss://waves-api.smallest.ai/api/v1/asr', {
+  headers: { 'Authorization': 'Bearer YOUR_API_KEY' }
+});
+
+ws.onopen = () => {
+  // Send audio chunks (16kHz, mono, linear16)
+  const audioChunk = getAudioData(); // Your audio buffer
+  ws.send(audioChunk);
+};
+
+ws.onmessage = (event) => {
+  const result = JSON.parse(event.data);
+  if (result.is_final) {
+    console.log(result.text);
+  }
+};
+```
+
+## Sample Response
+
+```json
+{
+  "text": "Hello, how can I help you today?",
+  "is_final": true,
+  "language": "en",
+  "confidence": 0.98
+}
+```
+
+**Response Fields:**
+- `text` — Transcribed text with punctuation
+- `is_final` — `true` for complete utterances, `false` for interim results
+- `language` — Detected language code
+- `confidence` — Transcription confidence score (0-1)
+
+## Best Practices
+
+**Audio Format:** Use 16kHz sample rate, mono channel, linear16 encoding for optimal accuracy. Supported formats include linear16, FLAC, Opus, and μ-law.
+
+**Chunk Size:** Send audio in 0.5-1 second chunks (8,000-16,000 bytes at 16kHz) to balance latency and connection stability.
+
+**Error Handling:** Always implement reconnection logic—WebSocket connections may drop during extended sessions.
+
+<Tip>
+Enable `add_punctuation=true` query parameter for production applications to receive properly formatted transcriptions.
+</Tip>
