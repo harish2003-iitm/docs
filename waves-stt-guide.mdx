@@ -1,104 +1,1321 @@
 ---
-title: 'Transcribe Audio with Waves STT'
-description: 'Real-time speech transcription via WebSocket'
+title: "Transcribe Audio with Waves STT"
+description: "Real-time speech-to-text transcription via WebSocket"
+icon: "waveform-lines"
 ---
 
-Waves STT provides real-time speech-to-text transcription with sub-second latency. Stream audio over WebSocket and receive instant transcriptions with built-in punctuation, PII redaction, and support for 30+ languages.
+<Note>
+**Enterprise Required:** Get your API key from [Waves Console](https://waves.smallest.ai/)
+</Note>
+
+<Warning>
+Always refer to [official Waves documentation](https://waves-docs.smallest.ai/) for current specifications
+</Warning>
+
+## Overview
+
+Transform live audio into accurate text transcriptions with sub-100ms latency. Perfect for real-time applications like live captioning, voice assistants, meeting transcription, and customer service automation.
+
+<CardGroup cols={3}>
+  <Card title="Real-time" icon="bolt" color="#10b981">
+    Sub-100ms latency for live transcription
+  </Card>
+  <Card title="Multi-language" icon="globe" color="#3b82f6">
+    English, Hindi, and 30+ languages
+  </Card>
+  <Card title="Secure" icon="shield-check" color="#8b5cf6">
+    Built-in PII redaction
+  </Card>
+</CardGroup>
+
+---
 
 ## Endpoint
+
+Connect to the Waves STT WebSocket endpoint with your API key to start transcribing audio in real-time.
 
 ```
 wss://waves-api.smallest.ai/api/v1/asr
 ```
 
-**Method:** WebSocket
-**Pricing:** $0.025/minute (billed per second)
+| Property | Value |
+|----------|-------|
+| **Protocol** | Secure WebSocket (WSS) over TLS |
+| **Pricing** | $0.025 per minute (billed per second) |
+| **Max Connection Time** | Unlimited |
+| **Concurrent Connections** | Based on plan |
+
+---
 
 ## Authentication
 
-Include your API key as a Bearer token in the `Authorization` header:
+Authenticate your requests using a Bearer token. Choose between header-based or query parameter authentication depending on your environment.
 
-```
-Authorization: Bearer YOUR_API_KEY
+<Tabs>
+<Tab title="Header (Recommended)">
+**Best for:** Server-side applications with full header control
+
+<CodeGroup>
+```python Python
+import websockets
+
+headers = {
+    "Authorization": "Bearer YOUR_API_KEY"
+}
+
+async with websockets.connect(
+    "wss://waves-api.smallest.ai/api/v1/asr",
+    extra_headers=headers
+) as ws:
+    # Ready to transcribe
 ```
 
-Get your API key from your [Waves dashboard](https://waves.smallest.ai/) under **API Key** settings.
+```go Go
+import "github.com/gorilla/websocket"
+
+header := map[string][]string{
+    "Authorization": {"Bearer YOUR_API_KEY"},
+}
+
+conn, _, err := websocket.DefaultDialer.Dial(
+    "wss://waves-api.smallest.ai/api/v1/asr",
+    header,
+)
+```
+</CodeGroup>
+</Tab>
+
+<Tab title="Query Parameter">
+**Best for:** Browser-based applications where headers aren't supported
+
+<CodeGroup>
+```javascript JavaScript
+const ws = new WebSocket(
+  'wss://waves-api.smallest.ai/api/v1/asr?api_key=YOUR_API_KEY'
+);
+
+ws.onopen = () => console.log('Connected');
+```
+
+```python Python
+uri = "wss://waves-api.smallest.ai/api/v1/asr?api_key=YOUR_API_KEY"
+
+async with websockets.connect(uri) as ws:
+    # Ready to transcribe
+```
+</CodeGroup>
+
+<Warning>
+Query parameters may be logged in server access logs. Use header authentication for sensitive environments.
+</Warning>
+</Tab>
+</Tabs>
+
+<Info>
+**Security Best Practice:** Store API keys in environment variables, never commit them to version control.
+</Info>
+
+---
 
 ## Quick Start
 
-### Python
+Get up and running in three simple steps.
+
+<Steps>
+<Step title="Establish Connection">
+Open a WebSocket connection using your API key for authentication
+</Step>
+<Step title="Stream Audio">
+Send audio chunks as binary messages (recommended: 8KB every 0.5s)
+</Step>
+<Step title="Receive Transcriptions">
+Listen for JSON responses containing transcribed text with confidence scores
+</Step>
+</Steps>
+
+<AccordionGroup>
+<Accordion title="Complete Working Example" icon="code" defaultOpen>
+<Tabs>
+<Tab title="Python">
+Production-ready Python example with error handling and automatic reconnection.
 
 ```python
 import asyncio
 import websockets
+import json
+import os
 
-async def transcribe_audio():
+async def transcribe_file(audio_path):
+    """Transcribe audio file with Waves STT"""
+    api_key = os.getenv("WAVES_API_KEY")
     uri = "wss://waves-api.smallest.ai/api/v1/asr"
-    headers = {
-        "Authorization": "Bearer YOUR_API_KEY"
-    }
+    headers = {"Authorization": f"Bearer {api_key}"}
 
-    async with websockets.connect(uri, extra_headers=headers) as ws:
-        # Send audio as binary chunks (16kHz, mono, linear16)
-        with open("audio.raw", "rb") as audio:
-            while chunk := audio.read(8000):  # 0.5s chunks
-                await ws.send(chunk)
+    try:
+        async with websockets.connect(uri, extra_headers=headers) as ws:
+            print("✓ Connected to Waves STT")
 
-        # Receive transcription results
-        async for message in ws:
-            result = json.loads(message)
-            if result.get("is_final"):
-                print(result["text"])
+            with open(audio_path, "rb") as audio:
+                while chunk := audio.read(8000):  # 0.5s at 16kHz
+                    await ws.send(chunk)
 
-asyncio.run(transcribe_audio())
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        result = json.loads(response)
+
+                        if result["is_final"]:
+                            confidence = result['confidence']
+                            text = result['text']
+                            print(f"[{confidence:.2f}] {text}")
+
+                    except asyncio.TimeoutError:
+                        continue
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+# Run
+asyncio.run(transcribe_file("audio.raw"))
 ```
+</Tab>
 
-### JavaScript
+<Tab title="JavaScript">
+Browser-based live microphone transcription with interim results.
 
 ```javascript
-const ws = new WebSocket('wss://waves-api.smallest.ai/api/v1/asr', {
-  headers: { 'Authorization': 'Bearer YOUR_API_KEY' }
-});
-
-ws.onopen = () => {
-  // Send audio chunks (16kHz, mono, linear16)
-  const audioChunk = getAudioData(); // Your audio buffer
-  ws.send(audioChunk);
-};
-
-ws.onmessage = (event) => {
-  const result = JSON.parse(event.data);
-  if (result.is_final) {
-    console.log(result.text);
+class WavesSTT {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.ws = null;
+    this.connect();
   }
-};
+
+  connect() {
+    this.ws = new WebSocket(
+      `wss://waves-api.smallest.ai/api/v1/asr?api_key=${this.apiKey}&interim_results=true`
+    );
+
+    this.ws.onopen = () => {
+      console.log('✓ Connected to Waves STT');
+      this.startMicrophone();
+    };
+
+    this.ws.onmessage = (event) => {
+      const result = JSON.parse(event.data);
+      const icon = result.is_final ? '✓' : '⋯';
+      console.log(icon, result.text);
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('Connection error:', error);
+      setTimeout(() => this.connect(), 3000);
+    };
+  }
+
+  async startMicrophone() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      });
+
+      const recorder = new MediaRecorder(stream);
+
+      recorder.ondataavailable = (e) => {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          e.data.arrayBuffer().then(buf => this.ws.send(buf));
+        }
+      };
+
+      recorder.start(500);  // Send chunks every 0.5s
+      console.log('✓ Recording started');
+
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+    }
+  }
+}
+
+// Usage
+const stt = new WavesSTT('YOUR_API_KEY');
+```
+</Tab>
+
+<Tab title="Go">
+High-performance Go implementation for production environments.
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+    "github.com/gorilla/websocket"
+)
+
+type TranscriptionResult struct {
+    Text       string  `json:"text"`
+    IsFinal    bool    `json:"is_final"`
+    Language   string  `json:"language"`
+    Confidence float64 `json:"confidence"`
+}
+
+func main() {
+    apiKey := os.Getenv("WAVES_API_KEY")
+    if apiKey == "" {
+        log.Fatal("WAVES_API_KEY environment variable not set")
+    }
+
+    header := map[string][]string{
+        "Authorization": {fmt.Sprintf("Bearer %s", apiKey)},
+    }
+
+    conn, _, err := websocket.DefaultDialer.Dial(
+        "wss://waves-api.smallest.ai/api/v1/asr",
+        header,
+    )
+    if err != nil {
+        log.Fatal("Connection failed:", err)
+    }
+    defer conn.Close()
+
+    fmt.Println("✓ Connected to Waves STT")
+
+    // Send audio in goroutine
+    go func() {
+        file, err := os.Open("audio.raw")
+        if err != nil {
+            log.Fatal("Failed to open audio file:", err)
+        }
+        defer file.Close()
+
+        buffer := make([]byte, 8000)
+        for {
+            n, err := file.Read(buffer)
+            if n == 0 || err != nil {
+                break
+            }
+
+            if err := conn.WriteMessage(websocket.BinaryMessage, buffer[:n]); err != nil {
+                log.Println("Write error:", err)
+                return
+            }
+
+            time.Sleep(500 * time.Millisecond)
+        }
+    }()
+
+    // Receive transcriptions
+    for {
+        _, message, err := conn.ReadMessage()
+        if err != nil {
+            log.Println("Read error:", err)
+            break
+        }
+
+        var result TranscriptionResult
+        if err := json.Unmarshal(message, &result); err != nil {
+            log.Println("JSON parse error:", err)
+            continue
+        }
+
+        if result.IsFinal {
+            fmt.Printf("[%.2f] %s\n", result.Confidence, result.Text)
+        }
+    }
+}
+```
+</Tab>
+</Tabs>
+</Accordion>
+</AccordionGroup>
+
+<Tip>
+**Pro Tip:** Send audio in 8000-byte chunks (0.5 seconds at 16kHz) for optimal balance between latency and accuracy.
+</Tip>
+
+---
+
+## Audio Requirements
+
+Configure your audio input to match these specifications for best transcription quality.
+
+<CardGroup cols={2}>
+<Card title="Sample Rate" icon="signal">
+**Recommended:** 16000 Hz
+
+Optimal balance of accuracy and file size. Higher rates (24kHz, 48kHz) provide better quality for complex audio.
+</Card>
+
+<Card title="Encoding" icon="file-waveform">
+**Recommended:** linear16 (PCM)
+
+Supported formats:
+- `linear16` - PCM 16-bit (best accuracy)
+- `flac` - Lossless compression
+- `opus` - Low-latency streaming
+- `mulaw` - Telephony standard
+</Card>
+
+<Card title="Channels" icon="waveform">
+**Required:** Mono (1 channel)
+
+Multi-channel audio must be converted to mono before streaming.
+</Card>
+
+<Card title="Chunk Size" icon="cube">
+**Recommended:** 8000 bytes (0.5s)
+
+Range: 4000-16000 bytes
+
+Smaller chunks = lower latency
+Larger chunks = better accuracy
+</Card>
+</CardGroup>
+
+### Format Conversion
+
+Use FFmpeg to convert audio to the optimal format for Waves STT.
+
+<CodeGroup>
+```bash Convert to Optimal Format
+# Convert any audio file to optimal Waves STT format
+ffmpeg -i input.mp3 \
+  -ar 16000 \
+  -ac 1 \
+  -f s16le \
+  output.raw
 ```
 
-## Sample Response
+```bash Check Current Format
+# Verify audio file properties
+ffprobe -v error \
+  -show_entries stream=codec_name,sample_rate,channels \
+  audio.wav
+```
+
+```bash Batch Conversion
+# Convert multiple files
+for file in *.mp3; do
+  ffmpeg -i "$file" -ar 16000 -ac 1 -f s16le "${file%.mp3}.raw"
+done
+```
+</CodeGroup>
+
+---
+
+## Response Format
+
+Waves STT sends JSON-formatted transcription results via WebSocket messages. Understand the difference between final and interim results to build responsive applications.
+
+<Tabs>
+<Tab title="Final Result">
+**Complete, immutable transcription** of a speech segment. Use for final display, database storage, and triggering actions.
 
 ```json
 {
-  "text": "Hello, how can I help you today?",
+  "text": "The quarterly revenue exceeded expectations by fifteen percent.",
   "is_final": true,
   "language": "en",
-  "confidence": 0.98
+  "confidence": 0.97
 }
 ```
 
-**Response Fields:**
-- `text` — Transcribed text with punctuation
-- `is_final` — `true` for complete utterances, `false` for interim results
-- `language` — Detected language code
-- `confidence` — Transcription confidence score (0-1)
+<ResponseField name="text" type="string" required>
+Fully transcribed text with automatic punctuation, capitalization, and formatting applied.
+</ResponseField>
+
+<ResponseField name="is_final" type="boolean" required>
+Always `true` for final results. This transcription will not change.
+</ResponseField>
+
+<ResponseField name="language" type="string">
+Detected or specified language code in ISO 639-1 format (`en`, `es`, `fr`, etc.)
+</ResponseField>
+
+<ResponseField name="confidence" type="number">
+Transcription confidence score from 0.0 to 1.0
+
+- **0.9-1.0:** High confidence (use as-is)
+- **0.7-0.9:** Medium confidence (consider context)
+- **Below 0.7:** Low confidence (may need review)
+</ResponseField>
+
+<Check>
+**Best for:** Saving to database, displaying final transcript, triggering automations
+</Check>
+</Tab>
+
+<Tab title="Interim Result">
+**Preliminary transcription** that updates as more audio is processed. Use for real-time feedback and live captions.
+
+```json
+{
+  "text": "The quarterly revenue exceeded",
+  "is_final": false,
+  "language": "en",
+  "confidence": 0.89
+}
+```
+
+<Note>
+Enable interim results by adding `?interim_results=true` to your WebSocket URL
+</Note>
+
+**Key Differences:**
+- `is_final` is `false`
+- Text may change as more audio arrives
+- Confidence is typically lower
+- Sent more frequently (every ~250ms)
+
+<Check>
+**Best for:** Live captions, real-time UI updates, immediate user feedback
+</Check>
+</Tab>
+</Tabs>
+
+---
+
+## Configuration Options
+
+Customize transcription behavior using URL query parameters. Mix and match options to fit your use case.
+
+<Tabs>
+<Tab title="Language">
+Control language detection and selection.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `language` | string | `auto` | Target language: `en`, `hi`, `es`, `fr`, etc. or `auto` for automatic detection |
+
+**Examples:**
+```python
+# Automatic language detection
+uri = "wss://waves-api.smallest.ai/api/v1/asr?language=auto"
+
+# Force English transcription
+uri = "wss://waves-api.smallest.ai/api/v1/asr?language=en"
+
+# Spanish transcription
+uri = "wss://waves-api.smallest.ai/api/v1/asr?language=es"
+```
+
+<Tip>
+Specifying language explicitly improves accuracy and reduces latency by 10-15%
+</Tip>
+</Tab>
+
+<Tab title="Audio">
+Configure audio input parameters to match your source.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sample_rate` | integer | `16000` | Audio sample rate in Hz: `8000`, `16000`, `24000`, `48000` |
+| `encoding` | string | `linear16` | Audio format: `linear16`, `flac`, `opus`, `mulaw` |
+
+**Examples:**
+```python
+# High-quality audio (48kHz)
+uri = "wss://waves-api.smallest.ai/api/v1/asr?sample_rate=48000&encoding=flac"
+
+# Telephony audio (8kHz)
+uri = "wss://waves-api.smallest.ai/api/v1/asr?sample_rate=8000&encoding=mulaw"
+
+# Streaming audio (Opus)
+uri = "wss://waves-api.smallest.ai/api/v1/asr?encoding=opus&sample_rate=16000"
+```
+</Tab>
+
+<Tab title="Features">
+Enable advanced transcription features.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `add_punctuation` | boolean | `true` | Automatic punctuation and capitalization |
+| `interim_results` | boolean | `false` | Receive real-time preliminary transcriptions |
+| `profanity_filter` | boolean | `false` | Replace profanity with asterisks |
+| `redact_pii` | boolean | `false` | Automatically redact SSN, credit cards, phone numbers |
+| `speaker_labels` | boolean | `false` | Identify different speakers (plan-dependent) |
+
+**Examples:**
+```python
+# Live captions with interim results
+uri = "wss://waves-api.smallest.ai/api/v1/asr?interim_results=true&add_punctuation=true"
+
+# Privacy-focused call center
+uri = "wss://waves-api.smallest.ai/api/v1/asr?redact_pii=true&profanity_filter=true"
+
+# Meeting transcription with speakers
+uri = "wss://waves-api.smallest.ai/api/v1/asr?speaker_labels=true&add_punctuation=true"
+```
+
+<Info>
+Some features like `speaker_labels` may only be available on enterprise plans. Check your subscription level.
+</Info>
+</Tab>
+
+<Tab title="Complete">
+Full configuration example with all parameters.
+
+```python
+from urllib.parse import urlencode
+
+params = {
+    "language": "en",
+    "sample_rate": "16000",
+    "encoding": "linear16",
+    "add_punctuation": "true",
+    "interim_results": "true",
+    "profanity_filter": "false",
+    "redact_pii": "true",
+    "speaker_labels": "false"
+}
+
+base_uri = "wss://waves-api.smallest.ai/api/v1/asr"
+uri = f"{base_uri}?{urlencode(params)}"
+
+# Result: wss://waves-api.smallest.ai/api/v1/asr?language=en&sample_rate=16000&...
+```
+
+<Note>
+Boolean parameters must be strings: `"true"` or `"false"`, not Python booleans.
+</Note>
+</Tab>
+</Tabs>
+
+---
+
+## Use Cases
+
+Real-world implementation patterns for common scenarios. Each example includes optimal configuration and production-ready code.
+
+<Tabs>
+<Tab title="Live Captions">
+Real-time captions for video streaming, live events, and accessibility features.
+
+<Steps>
+<Step title="Configuration">
+Enable interim results for immediate feedback with minimal latency.
+
+```
+wss://waves-api.smallest.ai/api/v1/asr?interim_results=true&add_punctuation=true
+```
+
+**Settings:**
+- Chunk size: 4KB (0.25s) for minimal delay
+- Interim results: Enabled
+- Punctuation: Enabled
+</Step>
+
+<Step title="Implementation">
+```javascript
+class LiveCaptioner {
+  constructor(apiKey) {
+    this.ws = new WebSocket(
+      `wss://waves-api.smallest.ai/api/v1/asr?api_key=${apiKey}&interim_results=true&add_punctuation=true`
+    );
+    this.finalText = '';
+    this.setup();
+  }
+
+  setup() {
+    this.ws.onopen = () => this.startAudio();
+    this.ws.onmessage = (e) => this.handleTranscription(e);
+    this.ws.onerror = () => this.reconnect();
+  }
+
+  async startAudio() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true
+      }
+    });
+
+    const recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        e.data.arrayBuffer().then(buf => this.ws.send(buf));
+      }
+    };
+    recorder.start(250);  // 0.25s chunks for low latency
+  }
+
+  handleTranscription(event) {
+    const result = JSON.parse(event.data);
+    const display = document.getElementById('captions');
+
+    if (result.is_final) {
+      this.finalText += result.text + ' ';
+      display.textContent = this.finalText;
+    } else {
+      // Show interim in gray/italic
+      display.innerHTML = this.finalText + `<span style="color:#888;font-style:italic">${result.text}</span>`;
+    }
+
+    // Auto-scroll to bottom
+    display.scrollTop = display.scrollHeight;
+  }
+
+  reconnect() {
+    console.log('Reconnecting in 3s...');
+    setTimeout(() => new LiveCaptioner(this.apiKey), 3000);
+  }
+}
+
+// Start captioning
+new LiveCaptioner('YOUR_API_KEY');
+```
+</Step>
+</Steps>
+
+<Check>
+**Perfect for:** Video streaming platforms, live events, webinars, accessibility features
+</Check>
+</Tab>
+
+<Tab title="Voice Commands">
+Low-latency command recognition for voice-controlled applications.
+
+<Steps>
+<Step title="Configuration">
+Disable interim results and specify language for faster, more accurate commands.
+
+```
+wss://waves-api.smallest.ai/api/v1/asr?language=en&interim_results=false&add_punctuation=false
+```
+
+**Settings:**
+- Chunk size: 8KB (0.5s) balanced
+- Interim results: Disabled (only final)
+- Punctuation: Disabled (faster)
+- Language: Explicit (en)
+</Step>
+
+<Step title="Implementation">
+```python
+import asyncio
+import websockets
+import json
+
+class VoiceCommandProcessor:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.uri = "wss://waves-api.smallest.ai/api/v1/asr?language=en&interim_results=false"
+        self.commands = {
+            "lights on": self.turn_on_lights,
+            "lights off": self.turn_off_lights,
+            "temperature": self.set_temperature,
+            "volume up": self.volume_up,
+            "volume down": self.volume_down
+        }
+
+    async def listen(self):
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+
+        async with websockets.connect(
+            self.uri,
+            extra_headers=headers,
+            ping_interval=20
+        ) as ws:
+            print("🎤 Listening for commands...")
+
+            with open("audio.raw", "rb") as audio:
+                while chunk := audio.read(8000):
+                    await ws.send(chunk)
+
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        result = json.loads(msg)
+
+                        if result["is_final"] and result["confidence"] > 0.9:
+                            await self.process_command(result["text"])
+
+                    except asyncio.TimeoutError:
+                        continue
+
+    async def process_command(self, text):
+        command = text.lower().strip()
+        print(f"📝 Heard: {command}")
+
+        for trigger, action in self.commands.items():
+            if trigger in command:
+                await action(command)
+                return
+
+        print("❌ Command not recognized")
+
+    async def turn_on_lights(self, cmd):
+        print("💡 Turning lights ON")
+        # Your smart home API call here
+
+    async def turn_off_lights(self, cmd):
+        print("🌙 Turning lights OFF")
+
+    async def set_temperature(self, cmd):
+        import re
+        temp = re.search(r'\d+', cmd)
+        if temp:
+            print(f"🌡️  Setting temperature to {temp.group()}°")
+
+    async def volume_up(self, cmd):
+        print("🔊 Volume UP")
+
+    async def volume_down(self, cmd):
+        print("🔉 Volume DOWN")
+
+# Run
+processor = VoiceCommandProcessor("YOUR_API_KEY")
+asyncio.run(processor.listen())
+```
+</Step>
+</Steps>
+
+<Check>
+**Perfect for:** Smart home devices, IoT control, hands-free interfaces, voice assistants
+</Check>
+</Tab>
+
+<Tab title="Meeting Notes">
+Transcribe meetings with speaker identification and structured output.
+
+<Steps>
+<Step title="Configuration">
+Enable speaker labels and punctuation for readable meeting transcripts.
+
+```
+wss://waves-api.smallest.ai/api/v1/asr?speaker_labels=true&add_punctuation=true
+```
+
+**Settings:**
+- Chunk size: 16KB (1s) for better accuracy
+- Speaker labels: Enabled
+- Punctuation: Enabled
+</Step>
+
+<Step title="Implementation">
+```python
+import asyncio
+import websockets
+import json
+from datetime import datetime
+
+class MeetingTranscriber:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.uri = "wss://waves-api.smallest.ai/api/v1/asr?speaker_labels=true&add_punctuation=true"
+        self.transcript = []
+        self.speakers = set()
+
+    async def record_meeting(self, audio_file):
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+
+        async with websockets.connect(self.uri, extra_headers=headers) as ws:
+            print(f"📹 Recording meeting: {audio_file}")
+
+            with open(audio_file, "rb") as audio:
+                while chunk := audio.read(16000):  # 1s chunks
+                    await ws.send(chunk)
+
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=1.5)
+                        result = json.loads(msg)
+
+                        if result["is_final"]:
+                            speaker = result.get("speaker_label", "Unknown")
+                            self.speakers.add(speaker)
+
+                            entry = {
+                                "timestamp": datetime.now().isoformat(),
+                                "speaker": speaker,
+                                "text": result["text"],
+                                "confidence": result["confidence"]
+                            }
+
+                            self.transcript.append(entry)
+                            print(f"[{speaker}] {result['text']}")
+
+                    except asyncio.TimeoutError:
+                        continue
+
+            await self.save_transcript()
+
+    async def save_transcript(self):
+        filename = f"meeting_{datetime.now():%Y%m%d_%H%M%S}.json"
+
+        meeting_data = {
+            "meeting_id": filename,
+            "date": datetime.now().isoformat(),
+            "participants": len(self.speakers),
+            "speaker_list": list(self.speakers),
+            "transcript": self.transcript,
+            "summary": self.generate_summary()
+        }
+
+        with open(filename, "w") as f:
+            json.dump(meeting_data, f, indent=2)
+
+        print(f"✅ Transcript saved: {filename}")
+
+    def generate_summary(self):
+        total_words = sum(len(t["text"].split()) for t in self.transcript)
+        avg_confidence = sum(t["confidence"] for t in self.transcript) / len(self.transcript)
+
+        return {
+            "total_utterances": len(self.transcript),
+            "total_words": total_words,
+            "average_confidence": round(avg_confidence, 2),
+            "speakers": len(self.speakers)
+        }
+
+# Usage
+transcriber = MeetingTranscriber("YOUR_API_KEY")
+asyncio.run(transcriber.record_meeting("meeting.raw"))
+```
+</Step>
+</Steps>
+
+<Check>
+**Perfect for:** Conference calls, interviews, team meetings, podcast transcription
+</Check>
+
+<Note>
+Speaker labels feature requires an enterprise plan. Contact sales if not available.
+</Note>
+</Tab>
+
+<Tab title="Call Center">
+Secure transcription with PII redaction for compliance-sensitive environments.
+
+<Steps>
+<Step title="Configuration">
+Enable PII redaction to automatically protect sensitive customer information.
+
+```
+wss://waves-api.smallest.ai/api/v1/asr?redact_pii=true&add_punctuation=true&profanity_filter=true
+```
+
+**Settings:**
+- Chunk size: 8KB (0.5s)
+- PII redaction: Enabled
+- Profanity filter: Enabled
+- Punctuation: Enabled
+</Step>
+
+<Step title="Implementation">
+```python
+import asyncio
+import websockets
+import json
+import hashlib
+from datetime import datetime
+
+class SecureCallTranscriber:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.uri = "wss://waves-api.smallest.ai/api/v1/asr?redact_pii=true&profanity_filter=true"
+
+    async def transcribe_call(self, audio_file, call_id=None):
+        if not call_id:
+            call_id = hashlib.sha256(audio_file.encode()).hexdigest()[:12]
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        results = []
+
+        async with websockets.connect(self.uri, extra_headers=headers) as ws:
+            print(f"📞 Call ID: {call_id}")
+
+            with open(audio_file, "rb") as audio:
+                while chunk := audio.read(8000):
+                    await ws.send(chunk)
+
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        result = json.loads(msg)
+
+                        if result["is_final"]:
+                            # PII already redacted by API
+                            entry = {
+                                "timestamp": datetime.now().isoformat(),
+                                "text": result["text"],  # Safe - PII redacted
+                                "confidence": result["confidence"],
+                                "redacted": True
+                            }
+
+                            results.append(entry)
+                            print(f"[{result['confidence']:.2f}] {result['text']}")
+
+                    except asyncio.TimeoutError:
+                        continue
+
+            # Save securely
+            await self.save_encrypted(call_id, results)
+
+    async def save_encrypted(self, call_id, results):
+        filename = f"call_{call_id}.json"
+
+        call_data = {
+            "call_id": call_id,
+            "date": datetime.now().isoformat(),
+            "transcript": results,
+            "metadata": {
+                "redacted": True,
+                "compliance": "PII-safe",
+                "retention_days": 90
+            }
+        }
+
+        with open(filename, "w") as f:
+            json.dump(call_data, f, indent=2)
+
+        print(f"✅ Secure transcript saved: {filename}")
+
+# Usage
+transcriber = SecureCallTranscriber("YOUR_API_KEY")
+asyncio.run(transcriber.transcribe_call("customer_call.raw"))
+```
+</Step>
+</Steps>
+
+<Check>
+**Perfect for:** Customer service, healthcare, financial services, legal compliance
+</Check>
+
+<Info>
+**What gets redacted:** SSN, credit card numbers, phone numbers, email addresses. Numbers in addresses or dates are preserved.
+</Info>
+</Tab>
+</Tabs>
+
+---
+
+## Error Handling
+
+Common errors and their solutions. Build resilient applications with proper error handling.
+
+<AccordionGroup>
+<Accordion title="401 Unauthorized" icon="lock">
+**Problem:** API key is invalid, missing, or improperly formatted.
+
+```python
+# ❌ Missing Bearer prefix
+headers = {"Authorization": "YOUR_API_KEY"}
+
+# ✅ Correct format
+headers = {"Authorization": "Bearer YOUR_API_KEY"}
+```
+
+**Solutions:**
+1. Verify API key at [Waves Console](https://waves.smallest.ai/)
+2. Check for Bearer prefix in header
+3. Ensure key hasn't expired or been revoked
+4. Verify subscription is active
+</Accordion>
+
+<Accordion title="Connection Timeout (30s)" icon="clock">
+**Problem:** WebSocket closes automatically after 30 seconds of silence.
+
+**Solution:** Implement keep-alive pings every 20 seconds.
+
+<CodeGroup>
+```python Python
+async def keep_alive(ws):
+    """Send ping every 20 seconds to prevent timeout"""
+    while True:
+        try:
+            await asyncio.sleep(20)
+            await ws.ping()
+        except:
+            break
+```
+
+```javascript JavaScript
+// Keep-alive timer
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'ping' }));
+  }
+}, 20000);
+```
+</CodeGroup>
+
+<Tip>
+Alternatively, ensure you're sending audio chunks at regular intervals (every 0.5-1s).
+</Tip>
+</Accordion>
+
+<Accordion title="Invalid Audio Format (4001)" icon="file-audio">
+**Problem:** Audio encoding doesn't match the parameters specified in URL.
+
+**Diagnosis:**
+```bash
+# Check your audio file format
+ffprobe -v error -show_entries stream=codec_name,sample_rate,channels audio.wav
+
+# Expected output:
+# codec_name=pcm_s16le
+# sample_rate=16000
+# channels=1
+```
+
+**Solution:** Convert audio to match your configuration.
+
+```bash
+# Convert to linear16, 16kHz, mono
+ffmpeg -i input.mp3 -ar 16000 -ac 1 -f s16le output.raw
+```
+
+**Common mismatches:**
+- Stereo audio (must be mono)
+- Wrong sample rate (must match URL parameter)
+- Compressed format (MP3/AAC) when linear16 specified
+</Accordion>
+
+<Accordion title="Low Confidence Scores (<0.7)" icon="gauge-low">
+**Problem:** Transcriptions consistently have confidence below 0.7.
+
+**Common Causes & Fixes:**
+
+| Cause | Solution |
+|-------|----------|
+| Background noise | Enable noise suppression in audio capture |
+| Wrong language specified | Set correct language or use `auto` |
+| Low audio volume | Ensure levels are -20dB to -3dB |
+| Poor audio quality | Use higher sample rate (24kHz or 48kHz) |
+| Multiple speakers talking | Use speaker diarization if available |
+| Music/non-speech audio | Filter out non-speech segments |
+
+**Test audio quality:**
+```bash
+# Analyze audio levels
+ffmpeg -i audio.wav -af volumedetect -f null /dev/null 2>&1 | grep mean_volume
+
+# Should be between -30dB and -10dB
+```
+</Accordion>
+
+<Accordion title="No Speech Detected (4002)" icon="microphone-slash">
+**Problem:** API returns empty transcriptions or "no speech" errors.
+
+**Troubleshooting Checklist:**
+
+<Steps>
+<Step title="Verify Audio Contains Speech">
+```bash
+# Play audio to confirm it has speech
+ffplay -nodisp -autoexit audio.wav
+```
+</Step>
+
+<Step title="Check Microphone Permissions">
+```javascript
+// Request microphone access
+navigator.mediaDevices.getUserMedia({ audio: true })
+  .then(stream => console.log('✓ Microphone access granted'))
+  .catch(err => console.error('✗ Microphone denied:', err));
+```
+</Step>
+
+<Step title="Test Audio Levels">
+```bash
+# Check if audio is too quiet
+ffmpeg -i audio.wav -af volumedetect -f null /dev/null
+```
+</Step>
+
+<Step title="Try Known-Good Audio">
+```bash
+# Download test audio
+wget https://waves.smallest.ai/test-audio.wav
+
+# If test audio works, issue is with your input
+```
+</Step>
+</Steps>
+</Accordion>
+</AccordionGroup>
+
+---
 
 ## Best Practices
 
-**Audio Format:** Use 16kHz sample rate, mono channel, linear16 encoding for optimal accuracy. Supported formats include linear16, FLAC, Opus, and μ-law.
+Production-ready guidelines for building reliable transcription systems.
 
-**Chunk Size:** Send audio in 0.5-1 second chunks (8,000-16,000 bytes at 16kHz) to balance latency and connection stability.
+<CardGroup cols={2}>
+<Card title="Audio Quality" icon="microphone">
+**Optimize Input for Accuracy**
 
-**Error Handling:** Always implement reconnection logic—WebSocket connections may drop during extended sessions.
+<Check>Use 16kHz sample rate (optimal balance)</Check>
+<Check>Record in mono (single channel)</Check>
+<Check>Maintain -20dB to -3dB levels</Check>
+<Check>Enable noise suppression</Check>
+<Check>Use lossless formats when possible</Check>
+<Check>Test audio before production</Check>
+</Card>
 
-<Tip>
-Enable `add_punctuation=true` query parameter for production applications to receive properly formatted transcriptions.
-</Tip>
+<Card title="Performance" icon="gauge-high">
+**Minimize Latency**
+
+<Check>Send 0.5-1s chunks (8-16KB)</Check>
+<Check>Use persistent connections</Check>
+<Check>Implement connection pooling</Check>
+<Check>Monitor ping/pong (20s interval)</Check>
+<Check>Enable interim results for real-time</Check>
+<Check>Use CDN for audio delivery</Check>
+</Card>
+
+<Card title="Security" icon="shield">
+**Protect Sensitive Data**
+
+<Check>Store keys in environment variables</Check>
+<Check>Never commit keys to repositories</Check>
+<Check>Rotate keys every 90 days</Check>
+<Check>Use separate dev/staging/prod keys</Check>
+<Check>Enable PII redaction when needed</Check>
+<Check>Encrypt stored transcripts</Check>
+</Card>
+
+<Card title="Reliability" icon="check-double">
+**Build Fault-Tolerant Systems**
+
+<Check>Implement exponential backoff</Check>
+<Check>Add automatic reconnection</Check>
+<Check>Monitor connection health</Check>
+<Check>Log errors with context</Check>
+<Check>Set up alerting for failures</Check>
+<Check>Have fallback strategies</Check>
+</Card>
+</CardGroup>
+
+### Production-Ready Connection Handler
+
+Robust connection management with automatic retry and error handling.
+
+```python
+import asyncio
+import websockets
+import logging
+from typing import Optional
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class ResilientWavesSTT:
+    def __init__(self, api_key: str, max_retries: int = 5):
+        self.api_key = api_key
+        self.max_retries = max_retries
+        self.uri = "wss://waves-api.smallest.ai/api/v1/asr"
+
+    async def connect_with_retry(self) -> Optional[websockets.WebSocketClientProtocol]:
+        """Connect with exponential backoff retry logic"""
+        retry_count = 0
+
+        while retry_count < self.max_retries:
+            try:
+                headers = {"Authorization": f"Bearer {self.api_key}"}
+
+                ws = await websockets.connect(
+                    self.uri,
+                    extra_headers=headers,
+                    ping_interval=20,  # Keep-alive every 20s
+                    ping_timeout=10,   # Wait 10s for pong
+                    close_timeout=10   # Wait 10s for close handshake
+                )
+
+                logger.info("✓ Connected to Waves STT")
+                return ws
+
+            except (websockets.ConnectionClosed, OSError) as e:
+                retry_count += 1
+                wait_time = min(2 ** retry_count, 30)  # Max 30s
+
+                logger.warning(
+                    f"Connection failed (attempt {retry_count}/{self.max_retries}). "
+                    f"Retrying in {wait_time}s... Error: {e}"
+                )
+
+                if retry_count >= self.max_retries:
+                    logger.error("Max retries exceeded. Giving up.")
+                    raise
+
+                await asyncio.sleep(wait_time)
+
+        return None
+
+    async def transcribe_with_monitoring(self, audio_path: str):
+        """Transcribe with full error handling and monitoring"""
+        ws = await self.connect_with_retry()
+        if not ws:
+            return
+
+        try:
+            with open(audio_path, "rb") as audio:
+                bytes_sent = 0
+
+                while chunk := audio.read(8000):
+                    await ws.send(chunk)
+                    bytes_sent += len(chunk)
+
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        result = json.loads(response)
+
+                        if result["is_final"]:
+                            logger.info(
+                                f"[{result['confidence']:.2f}] {result['text']}"
+                            )
+
+                    except asyncio.TimeoutError:
+                        continue
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON response: {e}")
+                        continue
+
+                logger.info(f"✓ Completed. Sent {bytes_sent:,} bytes")
+
+        except Exception as e:
+            logger.error(f"Transcription error: {e}")
+            raise
+
+        finally:
+            await ws.close()
+
+# Usage
+stt = ResilientWavesSTT("YOUR_API_KEY")
+asyncio.run(stt.transcribe_with_monitoring("audio.raw"))
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="API Reference" icon="book" href="/api-reference/introduction">
+Explore complete API documentation with all parameters and response types
+</Card>
+
+<Card title="Language Support" icon="globe" href="https://waves-docs.smallest.ai/">
+View the full list of 30+ supported languages and dialects
+</Card>
+
+<Card title="Pricing Calculator" icon="calculator" href="https://waves.smallest.ai/pricing">
+Estimate costs based on your usage ($0.025/min billed per second)
+</Card>
+
+<Card title="Discord Community" icon="discord" href="https://discord.gg/waves">
+Join our community for support, tips, and feature discussions
+</Card>
+</CardGroup>
+
+<Info>
+**Need Help?** Email [support@smallest.ai](mailto:support@smallest.ai) or check [Waves Documentation](https://waves-docs.smallest.ai/)
+</Info>
